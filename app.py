@@ -25,7 +25,8 @@ from core.utils import (
     restore_from_backup,
     force_architecture_incompatibility,
     get_default_emby_path,
-    find_emby_servers
+    find_emby_servers,
+    check_ffmpeg_compatibility
 )
 import socket
 
@@ -36,10 +37,10 @@ def find_available_port(start_port=9876, max_port=9886):
             try:
                 s.bind(('', port))
                 s.close()
-                logging.info(f"Successfully found available port: {port}")
+                logging.info("Successfully found available port: {}".format(port))
                 return port
             except OSError as e:
-                logging.error(f"Port {port} is not available: {e}")
+                logging.error("Port {} is not available: {}".format(port, e))
                 continue
     logging.error("No available ports found in range")
     return None
@@ -75,7 +76,7 @@ def kill_existing_flask():
         os.system('pkill -9 -f "python.*app.py"')
         time.sleep(1)
     except Exception as e:
-        logging.error(f"Error killing existing processes: {e}")
+        logging.error("Error killing existing processes: {}".format(e))
 
 def is_port_in_use(port):
     """Check if a port is in use"""
@@ -124,7 +125,7 @@ def start_application():
             'message': 'Application started successfully'
         })
     except Exception as e:
-        error_msg = f"Error starting application: {str(e)}"
+        error_msg = "Error starting application: {}".format(str(e))
         logging.error(error_msg)
         return jsonify({
             'success': False,
@@ -151,7 +152,7 @@ def select_emby():
         if not os.path.exists(emby_path):
             return jsonify({
                 'success': False,
-                'message': f'Path does not exist: {emby_path}'
+                'message': 'Path does not exist: {}'.format(emby_path)
             }), 404
         
         # Save the selected path
@@ -164,104 +165,48 @@ def select_emby():
         })
         
     except Exception as e:
-        logging.error(f"Error in select_emby: {str(e)}")
+        logging.error("Error in select_emby: {}".format(str(e)))
         return jsonify({
             'success': False,
-            'message': f'Server error: {str(e)}'
+            'message': 'Server error: {}'.format(str(e))
         }), 500
 
 @app.route('/api/check-compatibility', methods=['POST'])
 def check_compatibility():
+    """Check FFMPEG compatibility."""
     try:
-        logging.info("Received compatibility check request")
-        emby_path = request.json.get('path')
-        logging.info(f"Checking compatibility for path: {emby_path}")
-        
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'message': 'No data provided'
+            }), 400
+            
+        emby_path = data.get('path')
         if not emby_path:
-            logging.warning("No Emby Server path provided")
             return jsonify({
                 'success': False,
-                'message': 'No Emby Server path provided',
-                'system_architecture': get_system_architecture(),
-                'ffmpeg_architecture': None,
-                'compatible': False
-            })
+                'message': 'No path provided'
+            }), 400
+            
+        # Get the client's IP address to determine if it's a remote access
+        client_ip = request.remote_addr
+        is_remote_access = client_ip != '127.0.0.1' and client_ip != 'localhost'
         
-        if not os.path.exists(emby_path):
-            logging.warning(f"Emby Server path does not exist: {emby_path}")
-            return jsonify({
-                'success': False,
-                'message': f'Emby Server path does not exist: {emby_path}',
-                'system_architecture': get_system_architecture(),
-                'ffmpeg_architecture': None,
-                'compatible': False
-            })
-        
-        # Save the selected path for later use
-        app.config['EMBY_PATH'] = emby_path
-        
-        # Get system architecture
-        system_arch = get_system_architecture()
-        logging.info(f"System architecture: {system_arch}")
-        
-        if not system_arch:
-            logging.error("Could not determine system architecture")
-            return jsonify({
-                'success': False,
-                'message': 'Could not determine system architecture',
-                'system_architecture': None,
-                'ffmpeg_architecture': None,
-                'compatible': False
-            })
-        
-        # Find FFMPEG binaries in Emby Server
-        ffmpeg_path = find_ffmpeg_binaries(emby_path)
-        logging.info(f"FFMPEG path: {ffmpeg_path}")
-        
-        if not ffmpeg_path:
-            logging.warning("FFMPEG binaries not found in Emby Server")
-            return jsonify({
-                'success': False,
-                'message': 'FFMPEG binaries not found in Emby Server',
-                'system_architecture': system_arch,
-                'ffmpeg_architecture': None,
-                'compatible': False
-            })
-        
-        # Get FFMPEG architecture
-        ffmpeg_arch = get_ffmpeg_architecture(ffmpeg_path)
-        logging.info(f"FFMPEG architecture: {ffmpeg_arch}")
-        
-        if not ffmpeg_arch:
-            logging.error("Could not determine FFMPEG architecture")
-            return jsonify({
-                'success': False,
-                'message': 'Could not determine FFMPEG architecture',
-                'system_architecture': system_arch,
-                'ffmpeg_architecture': None,
-                'compatible': False
-            })
-        
-        # Check compatibility
-        compatible = system_arch == ffmpeg_arch
-        logging.info(f"Compatibility check result: {compatible}")
+        # Use the new compatibility check function
+        is_compatible, message = check_ffmpeg_compatibility(emby_path, is_remote_access)
         
         return jsonify({
             'success': True,
-            'message': 'Compatibility check completed',
-            'system_architecture': system_arch,
-            'ffmpeg_architecture': ffmpeg_arch,
-            'compatible': compatible
+            'is_compatible': is_compatible,
+            'message': message
         })
-        
     except Exception as e:
-        logging.error(f"Error in check_compatibility: {str(e)}", exc_info=True)
+        error_msg = "Error checking compatibility: {}".format(str(e))
+        logging.error(error_msg)
         return jsonify({
             'success': False,
-            'message': f'Server error: {str(e)}',
-            'system_architecture': None,
-            'ffmpeg_architecture': None,
-            'compatible': False
+            'message': error_msg
         }), 500
 
 @app.route('/api/fix-ffmpeg', methods=['POST'])
@@ -290,12 +235,12 @@ def fix_ffmpeg():
             logging.info("FFMPEG compatibility fix completed successfully")
             return jsonify({"success": True, "message": "FFMPEG compatibility fixed successfully"})
         else:
-            logging.error(f"FFMPEG compatibility fix failed: {result['message']}")
+            logging.error("FFMPEG compatibility fix failed: {}".format(result['message']))
             return jsonify(result)
             
     except Exception as e:
-        logging.error(f"Error fixing FFMPEG compatibility: {str(e)}")
-        return jsonify({"success": False, "message": f"Error fixing FFMPEG compatibility: {str(e)}"})
+        logging.error("Error fixing FFMPEG compatibility: {}".format(str(e)))
+        return jsonify({"success": False, "message": "Error fixing FFMPEG compatibility: {}".format(str(e))})
     finally:
         CURRENT_PROCESS = None
 
@@ -321,7 +266,7 @@ def restore_ffmpeg():
                 try:
                     os.remove(test_marker)
                 except OSError as e:
-                    logging.warning(f"Could not remove test marker file: {e}")
+                    logging.warning("Could not remove test marker file: {}".format(e))
             
             return jsonify({
                 'success': True,
@@ -339,7 +284,7 @@ def restore_ffmpeg():
             })
             
     except Exception as e:
-        error_msg = f"Error restoring FFMPEG: {str(e)}"
+        error_msg = "Error restoring FFMPEG: {}".format(str(e))
         logging.error(error_msg)
         return jsonify({
             'success': False,
@@ -386,10 +331,10 @@ def get_logs():
 
     try:
         log_file = os.path.join('logs', 'emby_ffmpeg_fixer.log')
-        logging.info(f"Attempting to read log file: {log_file}")
+        logging.info("Attempting to read log file: {}".format(log_file))
         
         if not os.path.exists(log_file):
-            logging.error(f"Log file not found: {log_file}")
+            logging.error("Log file not found: {}".format(log_file))
             response = jsonify({
                 'success': False,
                 'message': 'Log file not found'
@@ -400,7 +345,7 @@ def get_logs():
         logging.info("Reading log file contents")
         with open(log_file, 'r', encoding='utf-8') as f:
             logs = f.read()
-            logging.info(f"Successfully read {len(logs)} bytes from log file")
+            logging.info("Successfully read {} bytes from log file".format(len(logs)))
 
         # Return logs with proper headers
         response = jsonify({
@@ -415,10 +360,10 @@ def get_logs():
         return response
 
     except Exception as e:
-        logging.error(f"Error reading logs: {str(e)}", exc_info=True)
+        logging.error("Error reading logs: {}".format(str(e)), exc_info=True)
         response = jsonify({
             'success': False,
-            'message': f'Error reading logs: {str(e)}'
+            'message': "Error reading logs: {}".format(str(e))
         })
         response.headers.add('Access-Control-Allow-Origin', '*')
         return response, 500
@@ -454,7 +399,7 @@ def force_test_mode():
         if target_arch == system_arch:
             return jsonify({
                 'success': False,
-                'message': f'Cannot force {target_arch} architecture as it matches your system. Please select the opposite architecture to simulate incompatibility.'
+                'message': 'Cannot force {} architecture as it matches your system. Please select the opposite architecture to simulate incompatibility.'.format(target_arch)
             })
         
         # Force single architecture
@@ -483,7 +428,7 @@ def force_test_mode():
             })
             
     except Exception as e:
-        error_msg = f"Error setting up test mode: {str(e)}"
+        error_msg = "Error setting up test mode: {}".format(str(e))
         logging.error(error_msg)
         return jsonify({
             'success': False,
@@ -524,7 +469,7 @@ def check_test_mode():
         })
         
     except Exception as e:
-        error_msg = f"Error checking test mode: {str(e)}"
+        error_msg = "Error checking test mode: {}".format(str(e))
         logging.error(error_msg)
         return jsonify({
             'success': False,
@@ -550,17 +495,17 @@ def stop_process():
         
         # First stop any running process
         process_stopped = process_manager.stop_process()
-        logging.info(f"Process stop result: {process_stopped}")
+        logging.info("Process stop result: {}".format(process_stopped))
         
         # Then restore to initial state
         restore_result = state_manager.restore_initial_state(emby_path)
-        logging.info(f"State restore result: {restore_result}")
+        logging.info("State restore result: {}".format(restore_result))
         
         if not restore_result["success"]:
-            logging.error(f"Failed to restore initial state: {restore_result['message']}")
+            logging.error("Failed to restore initial state: {}".format(restore_result['message']))
             return jsonify({
                 "success": False,
-                "message": f"Process stopped but failed to restore initial state: {restore_result['message']}"
+                "message": "Process stopped but failed to restore initial state: {}".format(restore_result['message'])
             })
         
         # Reset application state
@@ -577,7 +522,7 @@ def stop_process():
             "redirect": url_for('index')
         })
     except Exception as e:
-        error_msg = f"Error stopping process: {str(e)}"
+        error_msg = "Error stopping process: {}".format(str(e))
         logging.error(error_msg, exc_info=True)
         return jsonify({
             "success": False,
@@ -600,7 +545,7 @@ def get_default_path():
                 'message': 'No default Emby Server path found'
             })
     except Exception as e:
-        error_msg = f"Error getting default path: {str(e)}"
+        error_msg = "Error getting default path: {}".format(str(e))
         logging.error(error_msg)
         return jsonify({
             'success': False,
@@ -617,7 +562,7 @@ def get_process_state():
             'is_processing': process_state["is_running"]
         })
     except Exception as e:
-        error_msg = f"Error getting process state: {str(e)}"
+        error_msg = "Error getting process state: {}".format(str(e))
         logging.error(error_msg)
         return jsonify({
             'success': False,
@@ -662,7 +607,7 @@ def browse_emby():
         })
         
     except Exception as e:
-        error_msg = f"Error browsing for Emby Server: {str(e)}"
+        error_msg = "Error browsing for Emby Server: {}".format(str(e))
         logging.error(error_msg)
         return jsonify({
             'success': False,
@@ -717,11 +662,11 @@ def main():
         
         # Check if port is in use
         if is_port_in_use(APP_PORT):
-            logging.error(f"Port {APP_PORT} is already in use")
+            logging.error("Port {} is already in use".format(APP_PORT))
             sys.exit(1)
             
-        logging.info(f"Starting application on {APP_HOST}:{APP_PORT}")
-        print(f"Starting application on {APP_HOST}:{APP_PORT}")
+        logging.info("Starting application on {}:{}".format(APP_HOST, APP_PORT))
+        print("Starting application on {}:{}".format(APP_HOST, APP_PORT))
         
         # Use Flask's development server with minimal options
         app.run(
@@ -734,8 +679,8 @@ def main():
         )
         
     except Exception as e:
-        logging.error(f"Error starting application: {e}", exc_info=True)
-        print(f"Error starting application: {e}")
+        logging.error("Error starting application: {}".format(e), exc_info=True)
+        print("Error starting application: {}".format(e))
         sys.exit(1)
 
 if __name__ == '__main__':
@@ -750,5 +695,5 @@ if __name__ == '__main__':
         print("\nShutting down gracefully...")
         sys.exit(0)
     except Exception as e:
-        logging.error(f"Fatal error: {e}", exc_info=True)
+        logging.error("Fatal error: {}".format(e), exc_info=True)
         sys.exit(1)

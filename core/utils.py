@@ -21,7 +21,7 @@ def setup_logging():
         
         # Ensure the logs directory is writable
         if not os.access(logs_dir, os.W_OK):
-            raise OSError(f"Logs directory {logs_dir} is not writable")
+            raise OSError("Logs directory {} is not writable".format(logs_dir))
 
         log_file = os.path.join(logs_dir, 'emby_ffmpeg_fixer.log')
         
@@ -38,18 +38,44 @@ def setup_logging():
             
         return True
     except OSError as e:
-        print(f"Error setting up logging: {e}")
+        print("Error setting up logging: {}".format(e))
         return False
 
-def get_system_architecture():
-    """Get the system architecture."""
-    arch = platform.machine()
-    if arch == 'x86_64':
-        return 'x86_64'
-    elif arch == 'arm64':
-        return 'arm64'
+def get_system_architecture(target_system=None):
+    """Get the system architecture.
+    
+    Args:
+        target_system (str, optional): The system to check architecture for. 
+                                     If None, uses the current system.
+    """
+    if target_system == 'remote':
+        # When checking from a remote system, we need to get the architecture
+        # of the system where Emby Server is installed
+        try:
+            # Use system_profiler to get the architecture of the remote system
+            result = subprocess.run(['system_profiler', 'SPHardwareDataType'], 
+                                 capture_output=True, text=True)
+            output = result.stdout.lower()
+            
+            if 'chip' in output and 'apple' in output:
+                return 'arm64'
+            elif 'intel' in output:
+                return 'x86_64'
+            else:
+                # Fallback to platform.machine()
+                arch = platform.machine()
+                if arch == 'x86_64':
+                    return 'x86_64'
+                elif arch == 'arm64':
+                    return 'arm64'
+                return arch
+        except Exception as e:
+            logging.error("Error getting remote system architecture: {}".format(e))
+            # Fallback to platform.machine()
+            return platform.machine()
     else:
-        return arch
+        # For local system check
+        return platform.machine()
 
 def get_default_emby_path():
     """Get the default Emby Server installation path."""
@@ -80,7 +106,7 @@ def find_ffmpeg_binaries(emby_path):
             logging.error("No Emby Server path provided")
             return None
             
-        logging.info(f"Searching for FFMPEG in Emby Server at: {emby_path}")
+        logging.info("Searching for FFMPEG in Emby Server at: {}".format(emby_path))
         
         # For macOS, check in the app bundle
         if emby_path.endswith('.app'):
@@ -97,7 +123,7 @@ def find_ffmpeg_binaries(emby_path):
             # Log the paths we're checking
             logging.info("Checking for FFMPEG in standard locations:")
             for path in possible_paths:
-                logging.info(f"Checking: {path}")
+                logging.info("Checking: {}".format(path))
                 if os.path.exists(path):
                     if os.access(path, os.X_OK):
                         logging.info(f"Found executable FFMPEG at: {path}")
@@ -298,4 +324,41 @@ def find_emby_servers():
             if os.path.isdir(match):
                 found_servers.add(match)
     
-    return sorted(list(found_servers)) 
+    return sorted(list(found_servers))
+
+def check_ffmpeg_compatibility(emby_path, is_remote_access=False):
+    """Check if FFMPEG is compatible with the system.
+    
+    Args:
+        emby_path (str): Path to the Emby Server installation
+        is_remote_access (bool): Whether the check is being performed from a remote system
+    
+    Returns:
+        tuple: (bool, str) - (is_compatible, message)
+    """
+    try:
+        # Get FFMPEG binary path
+        ffmpeg_path = find_ffmpeg_binaries(emby_path)
+        if not ffmpeg_path:
+            return False, "FFMPEG binary not found in Emby Server installation"
+
+        # Get FFMPEG architecture
+        ffmpeg_arch = get_ffmpeg_architecture(ffmpeg_path)
+        if not ffmpeg_arch:
+            return False, "Could not determine FFMPEG architecture"
+
+        # Get system architecture
+        system_arch = get_system_architecture('remote' if is_remote_access else None)
+        if not system_arch:
+            return False, "Could not determine system architecture"
+
+        # Check compatibility
+        is_compatible = ffmpeg_arch == system_arch
+        message = "FFMPEG is compatible with your system" if is_compatible else \
+                 f"FFMPEG architecture ({ffmpeg_arch}) does not match system architecture ({system_arch})"
+
+        return is_compatible, message
+
+    except Exception as e:
+        logging.error(f"Error checking FFMPEG compatibility: {e}")
+        return False, f"Error checking compatibility: {str(e)}" 

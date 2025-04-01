@@ -49,4 +49,7 @@ logs/
 htmlcov/
 
 # Additional files
-*.log 
+*.log
+
+# ffmpeg binaries
+ffmpeg_binaries/ 
