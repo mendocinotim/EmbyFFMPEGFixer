@@ -193,13 +193,25 @@ def check_compatibility():
         client_ip = request.remote_addr
         is_remote_access = client_ip != '127.0.0.1' and client_ip != 'localhost'
         
-        # Use the new compatibility check function
-        is_compatible, message = check_ffmpeg_compatibility(emby_path, is_remote_access)
+        # Get system architecture
+        system_arch = get_system_architecture('remote' if is_remote_access else None)
+        
+        # Get FFMPEG architecture
+        ffmpeg_path = find_ffmpeg_binaries(emby_path)
+        ffmpeg_arch = get_ffmpeg_architecture(ffmpeg_path) if ffmpeg_path else None
+        
+        # Check compatibility
+        is_compatible = system_arch == ffmpeg_arch if system_arch and ffmpeg_arch else False
+        message = "FFMPEG is compatible with your system" if is_compatible else \
+                 "FFMPEG architecture ({}) does not match system architecture ({})".format(
+                     ffmpeg_arch or "Unknown", system_arch or "Unknown")
         
         return jsonify({
             'success': True,
             'is_compatible': is_compatible,
-            'message': message
+            'message': message,
+            'system_architecture': system_arch or "Unknown",
+            'ffmpeg_architecture': ffmpeg_arch or "Unknown"
         })
     except Exception as e:
         error_msg = "Error checking compatibility: {}".format(str(e))
