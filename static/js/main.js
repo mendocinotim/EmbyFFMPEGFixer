@@ -166,20 +166,30 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (fixSection) fixSection.classList.add('hidden');
                 if (restoreSection) restoreSection.classList.add('hidden');
                 
-                addLogEntry('Initial state restored, redirecting to start page...', 'complete', true, mainEntryId);
+                addLogEntry('Initial state restored, shutting down server...', 'complete', true, mainEntryId);
                 
                 // Shutdown the Flask server
                 fetch('/shutdown', {
                     method: 'POST'
                 })
-                .then(() => {
-                    // Redirect to the static start page
-                    window.location.href = data.redirect;
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        addLogEntry('Server shutdown initiated', 'complete', true, mainEntryId);
+                        // Wait a moment for the server to shut down
+                        setTimeout(() => {
+                            window.location.href = window.location.origin + ':5050/static/start.html';
+                        }, 2000);
+                    } else {
+                        throw new Error(data.message || 'Failed to shut down server');
+                    }
                 })
                 .catch(error => {
                     console.error('Error shutting down server:', error);
-                    // Still redirect even if shutdown fails
-                    window.location.href = data.redirect;
+                    // Still try to redirect even if shutdown response fails
+                    setTimeout(() => {
+                        window.location.href = window.location.origin + ':5050/static/start.html';
+                    }, 2000);
                 });
             } else {
                 throw new Error(data.message || 'Failed to stop process');
@@ -202,9 +212,19 @@ document.addEventListener('DOMContentLoaded', function() {
         fetch('/api/process-state')
             .then(response => response.json())
             .then(data => {
-                setProcessing(data.is_processing);
+                setProcessing(true);  // Force processing to true initially
                 if (data.is_processing) {
                     addLogEntry('Process is currently running', 'active');
+                }
+                
+                // Enable stop button
+                if (stopProcessButton) {
+                    stopProcessButton.disabled = false;
+                    stopProcessButton.classList.remove('disabled');
+                    stopProcessButton.classList.add('active');
+                    stopProcessButton.style.cursor = 'pointer';
+                    stopProcessButton.style.opacity = '1';
+                    stopProcessButton.title = 'Stop current process';
                 }
             })
             .catch(error => {

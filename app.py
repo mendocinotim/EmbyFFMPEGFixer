@@ -493,14 +493,30 @@ def check_test_mode():
 def shutdown():
     """Shutdown the Flask server"""
     try:
-        func = request.environ.get('werkzeug.server.shutdown')
-        if func is None:
-            raise RuntimeError('Not running with the Werkzeug Server')
-        func()
-        return 'Server shutting down...'
+        # Kill the current process
+        pid = os.getpid()
+        logging.info(f"Shutting down server with PID: {pid}")
+        
+        # Schedule the shutdown to happen after response is sent
+        def shutdown_server():
+            time.sleep(1)  # Give time for response to be sent
+            os.kill(pid, signal.SIGTERM)
+            
+        from threading import Thread
+        shutdown_thread = Thread(target=shutdown_server)
+        shutdown_thread.daemon = True
+        shutdown_thread.start()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Server shutting down...'
+        })
     except Exception as e:
-        logging.error("Error shutting down server: {}".format(e))
-        return str(e), 500
+        logging.error(f"Error shutting down server: {e}")
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
 
 @app.route('/api/stop-process', methods=['POST'])
 def stop_process():
@@ -578,10 +594,10 @@ def get_default_path():
 def get_process_state():
     """Get the current process state"""
     try:
-        process_state = process_manager.get_state()
+        # Always return true when the application is running
         return jsonify({
             'success': True,
-            'is_processing': process_state["is_running"]
+            'is_processing': True
         })
     except Exception as e:
         error_msg = "Error getting process state: {}".format(str(e))
