@@ -489,6 +489,19 @@ def check_test_mode():
             'test_mode_active': False
         }), 500
 
+@app.route('/shutdown', methods=['POST'])
+def shutdown():
+    """Shutdown the Flask server"""
+    try:
+        func = request.environ.get('werkzeug.server.shutdown')
+        if func is None:
+            raise RuntimeError('Not running with the Werkzeug Server')
+        func()
+        return 'Server shutting down...'
+    except Exception as e:
+        logging.error("Error shutting down server: {}".format(e))
+        return str(e), 500
+
 @app.route('/api/stop-process', methods=['POST'])
 def stop_process():
     """Stop any running process, restore initial state, and reset application state"""
@@ -524,14 +537,11 @@ def stop_process():
         state_manager.set_main_app_running(False)
         logging.info("Process stopped and initial state restored")
         
-        # Kill any remaining Python processes
-        kill_existing_flask()
-        
-        # Return success response with redirect
+        # Return success response with redirect to static page
         return jsonify({
             "success": True,
             "message": "Process stopped and initial state restored successfully",
-            "redirect": url_for('index')
+            "redirect": "/static/start.html"
         })
     except Exception as e:
         error_msg = "Error stopping process: {}".format(str(e))

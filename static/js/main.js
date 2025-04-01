@@ -168,10 +168,19 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 addLogEntry('Initial state restored, redirecting to start page...', 'complete', true, mainEntryId);
                 
-                // Handle redirect after a short delay
-                setTimeout(() => {
+                // Shutdown the Flask server
+                fetch('/shutdown', {
+                    method: 'POST'
+                })
+                .then(() => {
+                    // Redirect to the static start page
                     window.location.href = data.redirect;
-                }, 1000);
+                })
+                .catch(error => {
+                    console.error('Error shutting down server:', error);
+                    // Still redirect even if shutdown fails
+                    window.location.href = data.redirect;
+                });
             } else {
                 throw new Error(data.message || 'Failed to stop process');
             }
