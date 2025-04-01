@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Emby FFMPEG Fixer</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div id="initial-state" data-processing="{{ 'true' if is_processing else 'false' }}" style="display: none;"></div>
+    <div class="container">
+        <header>
+            <h1>Emby FFMPEG Fixer</h1>
+            <div class="info-box">
+                <i class="info-icon">ℹ️</i>
+                <div class="info-text">
+                    <strong>What This Tool Does:</strong> If your Emby Server shows "Bad CPU type in executable" errors when playing media, it means your FFMPEG binaries don't match your system architecture (often x86_64 vs arm64). This tool fixes that mismatch automatically.
+                </div>
+            </div>
+        </header>
+
+        <main>
+            <section class="step-container">
+                <h2>Step 1: Select Emby Server Application</h2>
+                <div class="input-group">
+                    <input type="text" id="embyPath" class="form-control" value="{{ default_emby_path or '' }}" placeholder="/Applications/EmbyServer.app">
+                    <button id="browseEmby" class="btn btn-secondary">Browse for Emby Server</button>
+                    <button id="useThisPath" class="btn btn-primary">Use This Path</button>
+                </div>
+                <div id="selected-path-container" class="path-display">
+                    <p><strong>Selected Path:</strong> <span id="selected-path">None</span></p>
+                </div>
+            </section>
+
+            <section class="step-container">
+                <h2>Step 2: Check FFMPEG Compatibility</h2>
+                <div class="server-control-buttons">
+                    <button id="check-compatibility" class="btn btn-primary" disabled>Check Compatibility</button>
+                    <button id="stop-process" class="btn btn-danger disabled" disabled title="No process running" style="cursor: not-allowed; opacity: 0.65;">Stop Process</button>
+                </div>
+                
+                <div id="compatibility-results" class="results-table hidden">
+                    <table>
+                        <tr>
+                            <td>System Architecture:</td>
+                            <td id="system-architecture"></td>
+                        </tr>
+                        <tr>
+                            <td>FFMPEG Architecture:</td>
+                            <td id="ffmpeg-architecture"></td>
+                        </tr>
+                        <tr>
+                            <td>Compatibility Status:</td>
+                            <td id="compatibility-status"></td>
+                        </tr>
+                    </table>
+                </div>
+            </section>
+
+            <section id="fix-section" class="step-container hidden">
+                <h2>Step 3: Fix FFMPEG Compatibility</h2>
+                <p>Your Emby Server's FFMPEG binaries need to be replaced with the correct architecture.</p>
+                <button id="fix-compatibility" class="primary-button">Fix FFMPEG Compatibility</button>
+                <div id="fix-status" class="status-message hidden"></div>
+            </section>
+
+            <section id="restore-section" class="step-container">
+                <h2>Restore Original FFMPEG Binaries</h2>
+                <p>If you've previously fixed your FFMPEG binaries, you can restore the original ones here.</p>
+                <button id="check-backup-button" class="secondary-button" disabled>Check for Backup</button>
+                <div id="backup-status" class="status-message hidden"></div>
+                <button id="restore-button" class="primary-button hidden">Restore Original FFMPEG</button>
+                <div id="restore-status" class="status-message hidden"></div>
+            </section>
+
+            <section id="test-mode-section" class="step-container">
+                <h2>Test Mode</h2>
+                <p>For testing purposes only: Force FFMPEG binaries to be single-architecture.</p>
+                <div class="button-group">
+                    <button id="force-x86-button" class="secondary-button">Force x86_64</button>
+                    <button id="force-arm-button" class="secondary-button">Force ARM64</button>
+                </div>
+                <div id="test-mode-status" class="status-message hidden"></div>
+            </section>
+
+            <section class="step-container">
+                <h2>Process Logs</h2>
+                <div class="log-controls">
+                    <button id="download-log-button" class="secondary-button">
+                        <i class="download-icon">⬇️</i> Download Log
+                    </button>
+                    <button id="view-log-button" class="secondary-button">
+                        <i class="view-icon">👁️</i> View Full Log
+                    </button>
+                </div>
+                <div id="log-container" class="log-container">
+                    <div id="log-entries" class="log-entries">
+                        <!-- Log entries will be added here -->
+                    </div>
+                    <div id="progress-bars" class="progress-bars">
+                        <!-- Progress bars for main steps -->
+                        <div class="progress-item" data-step="check-compatibility">
+                            <div class="progress-label">Check Compatibility</div>
+                            <div class="progress">
+                                <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+                            </div>
+                        </div>
+                        <div class="progress-item" data-step="fix-compatibility">
+                            <div class="progress-label">Fix Compatibility</div>
+                            <div class="progress">
+                                <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+                            </div>
+                        </div>
+                        <div class="progress-item" data-step="restore">
+                            <div class="progress-label">Restore Original</div>
+                            <div class="progress">
+                                <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>Emby FFMPEG Fixer v1.0.2 - Created to automatically fix compatibility issues with Emby Server</p>
+        </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

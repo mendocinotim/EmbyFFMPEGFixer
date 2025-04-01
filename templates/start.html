@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Emby FFMPEG Fixer - Start</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .start-container {
+            max-width: 800px;
+            margin: 2rem auto;
+            padding: 2rem;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .start-header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        .start-header h1 {
+            color: #2c3e50;
+            margin-bottom: 1rem;
+        }
+        .instructions {
+            margin-bottom: 2rem;
+            line-height: 1.6;
+        }
+        .instructions h2 {
+            color: #2c3e50;
+            margin-bottom: 1rem;
+        }
+        .instructions ul {
+            list-style-type: none;
+            padding-left: 0;
+        }
+        .instructions li {
+            margin-bottom: 0.5rem;
+            padding-left: 1.5rem;
+            position: relative;
+        }
+        .instructions li:before {
+            content: "•";
+            color: #3498db;
+            position: absolute;
+            left: 0;
+        }
+        .start-button {
+            display: block;
+            width: 200px;
+            margin: 2rem auto;
+            padding: 1rem 2rem;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 1.1rem;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .start-button:hover {
+            background-color: #2980b9;
+        }
+        .status-message {
+            text-align: center;
+            margin-top: 1rem;
+            padding: 1rem;
+            border-radius: 4px;
+            display: none;
+        }
+        .status-message.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status-message.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+    </style>
+</head>
+<body>
+    <div class="start-container">
+        <div class="start-header">
+            <h1>Emby FFMPEG Fixer</h1>
+            <p>Welcome to the Emby FFMPEG Fixer tool</p>
+        </div>
+
+        <div class="instructions">
+            <h2>Before You Begin</h2>
+            <p>This tool will help you fix compatibility issues with your Emby Server's FFMPEG binaries. Before starting, please ensure:</p>
+            <ul>
+                <li>Emby Server is installed on your system</li>
+                <li>You have administrator privileges</li>
+                <li>No other instances of this tool are currently running</li>
+                <li>You have backed up any important data (recommended)</li>
+            </ul>
+
+            <h2>What This Tool Does</h2>
+            <p>If your Emby Server shows "Bad CPU type in executable" errors when playing media, it means your FFMPEG binaries don't match your system architecture (often x86_64 vs arm64). This tool will:</p>
+            <ul>
+                <li>Detect your system architecture</li>
+                <li>Check your Emby Server's FFMPEG compatibility</li>
+                <li>Back up your original FFMPEG binaries</li>
+                <li>Replace them with the correct architecture version</li>
+            </ul>
+        </div>
+
+        <button id="start-button" class="start-button">Start FFMPEG Fixer</button>
+        <div id="status-message" class="status-message"></div>
+    </div>
+
+    <script>
+        document.getElementById('start-button').addEventListener('click', async function() {
+            const button = this;
+            const statusMessage = document.getElementById('status-message');
+            
+            button.disabled = true;
+            button.textContent = 'Starting...';
+            statusMessage.style.display = 'block';
+            statusMessage.className = 'status-message';
+            statusMessage.textContent = 'Attempting to start application...';
+            
+            try {
+                const response = await fetch('/api/start-application', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    statusMessage.className = 'status-message success';
+                    statusMessage.textContent = 'Application started successfully! Redirecting...';
+                    setTimeout(() => {
+                        window.location.href = '/main';
+                    }, 1000);
+                } else {
+                    throw new Error(data.message || 'Failed to start application');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                statusMessage.textContent = `Error: ${error.message}. Please try refreshing the page.`;
+                statusMessage.className = 'status-message error';
+                button.disabled = false;
+                button.textContent = 'Start FFMPEG Fixer';
+            }
+        });
+    </script>
+</body>
+</html> 
