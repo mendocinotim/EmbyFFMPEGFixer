@@ -85,23 +85,25 @@ def is_port_in_use(port):
 
 @app.route('/')
 def index():
-    """Show start page if main app is not running, otherwise redirect to main"""
-    if state_manager.is_main_app_running():
-        return redirect(url_for('main'))
-    return render_template('start.html')
+    """Show introduction page"""
+    return render_template('intro.html')
 
 @app.route('/main')
 def main():
     """Main application page"""
-    # Get default Emby Server path
-    default_path = get_default_emby_path()
-    
-    # Get current process state
-    process_state = process_manager.get_state()
-    
-    return render_template('index.html', 
-                         default_emby_path=default_path,
-                         is_processing=process_state["is_running"])
+    if not state_manager.is_main_app_running():
+        state_manager.set_main_app_running(True)
+    return render_template('index.html', default_emby_path=get_default_emby_path())
+
+@app.route('/intro')
+def intro():
+    """Show the introduction/welcome page"""
+    return render_template('intro.html')
+
+@app.route('/static/start.html')
+def start_page():
+    """Serve the static start page"""
+    return send_file('static/start.html')
 
 @app.route('/api/start-application', methods=['POST'])
 def start_application():
@@ -491,31 +493,34 @@ def check_test_mode():
 
 @app.route('/shutdown', methods=['POST'])
 def shutdown():
-    """Shutdown the Flask server"""
+    """Shutdown the Flask server."""
     try:
-        # Kill the current process
+        # Get the current process
         pid = os.getpid()
-        logging.info(f"Shutting down server with PID: {pid}")
         
-        # Schedule the shutdown to happen after response is sent
+        # Send success response before killing the server
+        response = jsonify({
+            'success': True,
+            'message': 'Server shutdown initiated'
+        })
+        
         def shutdown_server():
             time.sleep(1)  # Give time for response to be sent
             os.kill(pid, signal.SIGTERM)
-            
+        
+        # Start shutdown in a separate thread
         from threading import Thread
         shutdown_thread = Thread(target=shutdown_server)
         shutdown_thread.daemon = True
         shutdown_thread.start()
         
-        return jsonify({
-            'success': True,
-            'message': 'Server shutting down...'
-        })
+        return response
+        
     except Exception as e:
-        logging.error(f"Error shutting down server: {e}")
+        logging.error(f"Error during shutdown: {e}")
         return jsonify({
             'success': False,
-            'message': str(e)
+            'message': f'Error during shutdown: {str(e)}'
         }), 500
 
 @app.route('/api/stop-process', methods=['POST'])
@@ -590,22 +595,21 @@ def get_default_path():
             'message': error_msg
         }), 500
 
-@app.route('/api/process-state', methods=['GET'])
+@app.route('/api/process-state')
 def get_process_state():
     """Get the current process state"""
     try:
-        # Always return true when the application is running
+        state = process_manager.get_state()
         return jsonify({
             'success': True,
-            'is_processing': True
+            'is_processing': state['is_running'],
+            'initialized': state['initialized']
         })
     except Exception as e:
-        error_msg = "Error getting process state: {}".format(str(e))
-        logging.error(error_msg)
+        logging.error(f"Error getting process state: {e}")
         return jsonify({
             'success': False,
-            'message': error_msg,
-            'is_processing': False
+            'message': str(e)
         }), 500
 
 @app.route('/api/browse-emby', methods=['GET'])
@@ -706,15 +710,8 @@ def main():
         logging.info("Starting application on {}:{}".format(APP_HOST, APP_PORT))
         print("Starting application on {}:{}".format(APP_HOST, APP_PORT))
         
-        # Use Flask's development server with minimal options
-        app.run(
-            host=APP_HOST,
-            port=APP_PORT,
-            debug=False,
-            use_reloader=False,
-            threaded=False,  # Disable threading to prevent race conditions
-            processes=1  # Single process
-        )
+        # Use waitress instead of Flask's development server
+        serve(app, host=APP_HOST, port=APP_PORT)
         
     except Exception as e:
         logging.error("Error starting application: {}".format(e), exc_info=True)
@@ -735,3 +732,12 @@ if __name__ == '__main__':
     except Exception as e:
         logging.error("Fatal error: {}".format(e), exc_info=True)
         sys.exit(1)
+
+# Add a health check endpoint
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint to verify server status."""
+    return jsonify({
+        'status': 'healthy',
+        'timestamp': datetime.now().isoformat()
+    })

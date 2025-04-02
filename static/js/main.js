@@ -31,20 +31,34 @@ document.addEventListener('DOMContentLoaded', function() {
 
     let serverList;
 
+    // Add log monitoring state
+    let lastLogTimestamp = null;
+    let logCheckInterval = null;
+
+    // Add state tracking object
+    const appState = {
+        processRunning: false,
+        ffmpegArchitecture: null,
+        systemArchitecture: null,
+        hasBackup: false,
+        lastError: null,
+        lastOperation: null,
+        serverStatus: 'unknown'
+    };
+
     // Event Listeners
     if (stopProcessButton) {
+        // Set initial state
+        stopProcessButton.disabled = false;
+        stopProcessButton.classList.remove('disabled', 'pulsating');
+        stopProcessButton.style.cursor = 'pointer';
+        stopProcessButton.style.opacity = '1';
+        stopProcessButton.title = 'Return to introduction page';
+
+        // Add click handler
         stopProcessButton.addEventListener('click', function() {
-            if (isProcessing) {
-                stopProcess();
-            }
+            window.location.href = '/';
         });
-        
-        // Initialize stop button state
-        stopProcessButton.disabled = true;
-        stopProcessButton.classList.add('disabled');
-        stopProcessButton.setAttribute('title', 'No process running');
-        stopProcessButton.style.cursor = 'not-allowed';
-        stopProcessButton.style.opacity = '0.65';
     }
     
     // Enable buttons that should be active on load
@@ -88,31 +102,26 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function setProcessing(processing) {
-        console.log('Setting processing state:', processing); // Debug log
+        console.log('Setting processing state:', processing);
         isProcessing = processing;
         
-        // Update stop button state
-        if (stopProcessButton) {
-            stopProcessButton.disabled = !processing;
-            stopProcessButton.classList.toggle('disabled', !processing);
-            stopProcessButton.style.cursor = processing ? 'pointer' : 'not-allowed';
-            stopProcessButton.style.opacity = processing ? '1' : '0.65';
-            stopProcessButton.title = processing ? 'Stop current process' : 'No process running';
-            
-            if (processing) {
-                stopProcessButton.classList.add('active');
-                console.log('Stop button activated'); // Debug log
+        // Update button states
+        if (checkCompatibilityButton) {
+            checkCompatibilityButton.disabled = processing;
+            if (!processing) {
+                checkCompatibilityButton.classList.add('pulsating');
             } else {
-                stopProcessButton.classList.remove('active');
-                console.log('Stop button deactivated'); // Debug log
+                checkCompatibilityButton.classList.remove('pulsating');
             }
         }
-        
-        // Update other button states
-        if (checkCompatibilityButton) checkCompatibilityButton.disabled = processing;
         if (fixButton) fixButton.disabled = processing;
         if (restoreButton) restoreButton.disabled = processing;
         if (checkBackupButton) checkBackupButton.disabled = processing;
+        
+        // Never add pulsating to stop button
+        if (stopProcessButton) {
+            stopProcessButton.classList.remove('pulsating');
+        }
         
         // Update progress bars if stopping
         if (!processing) {
@@ -121,10 +130,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function stopProcess() {
-        if (!isProcessing) return;
-
         const mainEntryId = addLogEntry('Stopping process...', 'active');
-        setProcessing(true); // Keep processing state while stopping
         
         // Disable all buttons while stopping
         if (checkCompatibilityButton) checkCompatibilityButton.disabled = true;
@@ -133,6 +139,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (checkBackupButton) checkBackupButton.disabled = true;
         if (stopProcessButton) stopProcessButton.disabled = true;
         
+        // First stop any running process
         fetch('/api/stop-process', {
             method: 'POST',
             headers: {
@@ -151,45 +158,45 @@ document.addEventListener('DOMContentLoaded', function() {
         .then(data => {
             if (data.success) {
                 addLogEntry('Process stopped successfully', 'complete', true, mainEntryId);
-                addLogEntry('Restoring to initial state...', 'active', true, mainEntryId);
                 
-                // Reset all progress bars
-                resetProgress();
+                // Now initiate server shutdown
+                addLogEntry('Initiating server shutdown...', 'active', true, mainEntryId);
                 
-                // Update current step's progress to stopped state
-                if (currentStep) {
-                    updateProgress(currentStep, 100, 'error');
-                }
-                
-                // Clear results and reset UI
-                if (compatibilityResults) compatibilityResults.classList.add('hidden');
-                if (fixSection) fixSection.classList.add('hidden');
-                if (restoreSection) restoreSection.classList.add('hidden');
-                
-                addLogEntry('Initial state restored, shutting down server...', 'complete', true, mainEntryId);
-                
-                // Shutdown the Flask server
-                fetch('/shutdown', {
-                    method: 'POST'
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        addLogEntry('Server shutdown initiated', 'complete', true, mainEntryId);
-                        // Wait a moment for the server to shut down
-                        setTimeout(() => {
-                            window.location.href = window.location.origin + ':5050/static/start.html';
-                        }, 2000);
-                    } else {
-                        throw new Error(data.message || 'Failed to shut down server');
+                // Try to shutdown gracefully
+                return fetch('/shutdown', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
                     }
                 })
-                .catch(error => {
-                    console.error('Error shutting down server:', error);
-                    // Still try to redirect even if shutdown response fails
-                    setTimeout(() => {
-                        window.location.href = window.location.origin + ':5050/static/start.html';
-                    }, 2000);
+                .then(() => {
+                    addLogEntry('Server shutdown initiated', 'complete', true, mainEntryId);
+                    
+                    // Check server health until it's down
+                    let attempts = 0;
+                    const maxAttempts = 10;
+                    const checkInterval = 500; // 500ms between checks
+                    
+                    function checkServerDown() {
+                        attempts++;
+                        return fetch('/health')
+                            .then(() => {
+                                if (attempts >= maxAttempts) {
+                                    // If server is still up after max attempts, redirect anyway
+                                    window.location.href = '/static/start.html';
+                                } else {
+                                    // Server still up, try again
+                                    setTimeout(checkServerDown, checkInterval);
+                                }
+                            })
+                            .catch(() => {
+                                // Server is down, redirect
+                                window.location.href = '/static/start.html';
+                            });
+                    }
+                    
+                    // Start checking after a brief delay
+                    setTimeout(checkServerDown, 1000);
                 });
             } else {
                 throw new Error(data.message || 'Failed to stop process');
@@ -197,40 +204,40 @@ document.addEventListener('DOMContentLoaded', function() {
         })
         .catch(error => {
             console.error('Error:', error);
-            addLogEntry(`Failed to stop process: ${error.message}`, 'error', true, mainEntryId);
+            addLogEntry(`Error during shutdown: ${error.message}`, 'error', true, mainEntryId);
             // Re-enable buttons on error
-            setProcessing(false);
+            if (checkCompatibilityButton) checkCompatibilityButton.disabled = false;
+            if (fixButton) fixButton.disabled = false;
+            if (restoreButton) restoreButton.disabled = false;
+            if (checkBackupButton) checkBackupButton.disabled = false;
+            if (stopProcessButton) stopProcessButton.disabled = false;
         });
     }
 
     function initializeApp() {
+        // Add timestamp to log
         const currentDate = new Date().toISOString().substring(0, 10);
         const currentTime = new Date().toTimeString().substring(0, 8);
         addLogEntry(`${currentDate} ${currentTime} Initialization`, 'complete');
         
-        // Check current processing state from server
-        fetch('/api/process-state')
-            .then(response => response.json())
-            .then(data => {
-                setProcessing(true);  // Force processing to true initially
-                if (data.is_processing) {
-                    addLogEntry('Process is currently running', 'active');
-                }
-                
-                // Enable stop button
-                if (stopProcessButton) {
-                    stopProcessButton.disabled = false;
-                    stopProcessButton.classList.remove('disabled');
-                    stopProcessButton.classList.add('active');
-                    stopProcessButton.style.cursor = 'pointer';
-                    stopProcessButton.style.opacity = '1';
-                    stopProcessButton.title = 'Stop current process';
-                }
-            })
-            .catch(error => {
-                console.error('Error getting process state:', error);
-                setProcessing(false);
-            });
+        // Initialize button states
+        if (checkCompatibilityButton) {
+            checkCompatibilityButton.disabled = true;  // Start disabled until path is selected
+            checkCompatibilityButton.classList.remove('pulsating');  // Don't pulsate on load
+        }
+        
+        if (stopProcessButton) {
+            stopProcessButton.disabled = false;
+            stopProcessButton.classList.remove('pulsating', 'disabled');
+            stopProcessButton.style.cursor = 'pointer';
+            stopProcessButton.style.opacity = '1';
+            stopProcessButton.title = 'Return to introduction page';
+        }
+        
+        if (fixButton) {
+            fixButton.disabled = true;
+            fixButton.classList.remove('pulsating');
+        }
         
         // If there's a pre-populated path, trigger the path selection
         if (embyPathInput && embyPathInput.value) {
@@ -313,12 +320,8 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function checkCompatibility() {
-        const path = embyPathInput.value.trim();
-        if (!path) {
-            alert('Please enter or select an Emby Server path first');
-            return;
-        }
-
+        if (!selectedEmbyPath) return;
+        
         setProcessing(true);
         currentStep = 'check-compatibility';
         updateProgress('check-compatibility', 10);
@@ -335,7 +338,9 @@ document.addEventListener('DOMContentLoaded', function() {
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ path: path })
+            body: JSON.stringify({
+                path: selectedEmbyPath
+            })
         })
         .then(response => {
             if (!response.ok) {
@@ -357,10 +362,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 addLogEntry(`FFMPEG Architecture: ${data.ffmpeg_architecture}`, 'info', true);
                 addLogEntry(`Compatibility Status: ${data.is_compatible ? 'Compatible' : 'Incompatible'}`, data.is_compatible ? 'success' : 'error', true);
                 
+                // Update button states based on compatibility
+                isCompatible = data.is_compatible;
+                updateButtonStatesAfterCheck(data.is_compatible);
+                
                 // Show fix section if incompatible
                 if (!data.is_compatible) {
                     document.getElementById('fix-section').classList.remove('hidden');
-                    fixButton.disabled = false;
                 }
             } else {
                 throw new Error(data.message || 'Failed to check compatibility');
@@ -845,4 +853,189 @@ document.addEventListener('DOMContentLoaded', function() {
 
     document.getElementById('force-x86-button').addEventListener('click', () => forceArchitecture('x86_64'));
     document.getElementById('force-arm-button').addEventListener('click', () => forceArchitecture('arm64'));
+
+    // Function to monitor logs
+    function startLogMonitoring() {
+        // Clear any existing interval
+        if (logCheckInterval) {
+            clearInterval(logCheckInterval);
+        }
+        
+        // Set up periodic log checking
+        logCheckInterval = setInterval(checkNewLogs, 2000); // Check every 2 seconds
+    }
+    
+    function stopLogMonitoring() {
+        if (logCheckInterval) {
+            clearInterval(logCheckInterval);
+            logCheckInterval = null;
+        }
+    }
+    
+    function checkNewLogs() {
+        fetch('/api/get-logs', {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.logs) {
+                const logLines = data.logs.split('\n');
+                const latestLog = logLines[logLines.length - 1];
+                
+                if (latestLog) {
+                    const timestamp = latestLog.split(' ')[0]; // Get timestamp from log entry
+                    
+                    // If this is a new log entry
+                    if (timestamp !== lastLogTimestamp) {
+                        lastLogTimestamp = timestamp;
+                        
+                        // Parse the log entry
+                        const logEntry = latestLog.trim();
+                        if (logEntry) {
+                            // Add the new log entry to the UI
+                            addLogEntry(logEntry, 'info');
+                            
+                            // Enhanced log pattern monitoring
+                            if (logEntry.includes('error') || logEntry.includes('Error')) {
+                                console.warn('Error detected in logs:', logEntry);
+                                // Track error patterns for debugging
+                                if (logEntry.includes('Permission denied')) {
+                                    console.warn('Permission issue detected - may need elevated privileges');
+                                } else if (logEntry.includes('File not found')) {
+                                    console.warn('File access issue detected - path may be incorrect');
+                                }
+                            }
+                            
+                            // Process state monitoring
+                            if (logEntry.includes('Process is currently running')) {
+                                setProcessing(true);
+                                console.log('Process state: Running');
+                            } else if (logEntry.includes('Process stopped successfully')) {
+                                setProcessing(false);
+                                console.log('Process state: Stopped');
+                            }
+                            
+                            // FFMPEG compatibility monitoring
+                            if (logEntry.includes('FFMPEG Architecture:')) {
+                                const arch = logEntry.split(':')[1].trim();
+                                console.log('FFMPEG Architecture detected:', arch);
+                            }
+                            
+                            // Server state monitoring
+                            if (logEntry.includes('Server shutdown initiated')) {
+                                console.log('Server state: Shutting down');
+                            } else if (logEntry.includes('Server started')) {
+                                console.log('Server state: Started');
+                            }
+                            
+                            // Backup state monitoring
+                            if (logEntry.includes('Original FFMPEG backup found')) {
+                                console.log('Backup state: Found');
+                            } else if (logEntry.includes('No original FFMPEG backup found')) {
+                                console.log('Backup state: Not found');
+                            }
+                            
+                            // Fix operation monitoring
+                            if (logEntry.includes('Fixing FFMPEG Compatibility')) {
+                                console.log('Fix operation: Started');
+                            } else if (logEntry.includes('FFMPEG compatibility fixed successfully')) {
+                                console.log('Fix operation: Completed successfully');
+                            }
+                            
+                            // Restore operation monitoring
+                            if (logEntry.includes('Restoring original FFMPEG binaries')) {
+                                console.log('Restore operation: Started');
+                            } else if (logEntry.includes('Original FFMPEG binaries restored successfully')) {
+                                console.log('Restore operation: Completed successfully');
+                            }
+                        }
+                    }
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error checking logs:', error);
+            // Log the error but continue monitoring
+            addLogEntry(`Error checking logs: ${error.message}`, 'error');
+        });
+    }
+    
+    // Start log monitoring when the page loads
+    startLogMonitoring();
+    
+    // Stop log monitoring when the page is unloaded
+    window.addEventListener('beforeunload', stopLogMonitoring);
+
+    // Update state tracking function
+    function updateAppState(newState) {
+        Object.assign(appState, newState);
+        console.log('Application state updated:', appState);
+        
+        // Log significant state changes
+        if (newState.processRunning !== undefined && newState.processRunning !== appState.processRunning) {
+            console.log(`Process state changed: ${newState.processRunning ? 'Running' : 'Stopped'}`);
+        }
+        if (newState.lastError) {
+            console.warn('New error detected:', newState.lastError);
+        }
+        if (newState.lastOperation) {
+            console.log('Operation completed:', newState.lastOperation);
+        }
+    }
+
+    // Add health check function
+    function checkServerHealth() {
+        return fetch('/health')
+            .then(response => response.json())
+            .then(data => data.status === 'healthy')
+            .catch(() => false);
+    }
+
+    // Update button states based on path selection
+    function updateButtonStatesForPath(path) {
+        if (checkCompatibilityButton) {
+            checkCompatibilityButton.disabled = !path;
+            if (path) {
+                checkCompatibilityButton.classList.add('pulsating');
+            }
+        }
+    }
+
+    // Update button states after compatibility check
+    function updateButtonStatesAfterCheck(isCompatible) {
+        if (checkCompatibilityButton) {
+            checkCompatibilityButton.classList.remove('pulsating');
+        }
+        
+        if (fixButton) {
+            fixButton.disabled = isCompatible;
+            if (!isCompatible) {
+                fixButton.classList.add('pulsating');
+            }
+        }
+        
+        // Only make stop button pulsate if compatible
+        if (stopProcessButton) {
+            if (isCompatible) {
+                stopProcessButton.classList.add('pulsating');
+            } else {
+                stopProcessButton.classList.remove('pulsating');
+            }
+        }
+    }
+
+    // Update button states after fix
+    function updateButtonStatesAfterFix() {
+        if (fixButton) {
+            fixButton.classList.remove('pulsating');
+        }
+        
+        if (stopProcessButton) {
+            stopProcessButton.classList.add('pulsating');
+        }
+    }
 });

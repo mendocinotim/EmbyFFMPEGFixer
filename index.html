@@ -66,15 +66,22 @@
             border-radius: 5px;
             font-weight: bold;
             transition: background-color 0.3s;
+            border: none;
+            cursor: pointer;
         }
         .start-button:hover {
             background-color: #3498db;
-            cursor: pointer;
         }
         .status {
             text-align: center;
             margin-top: 20px;
             color: #666;
+        }
+        .note {
+            text-align: center;
+            margin-top: 20px;
+            color: #666;
+            font-style: italic;
         }
     </style>
 </head>
@@ -99,14 +106,20 @@
 
         <button id="startButton" class="start-button">Start Application</button>
         <div id="status" class="status"></div>
+        <p class="note">You can close this page if you're done, or click Start Application to run more tests.</p>
     </div>
 
     <script>
         document.getElementById('startButton').addEventListener('click', function() {
+            const button = this;
             const statusDiv = document.getElementById('status');
+            
+            button.disabled = true;
+            button.textContent = 'Starting...';
             statusDiv.textContent = 'Starting application...';
             
-            fetch('http://mymoviesandtv.site:5050/api/start-application', {
+            // Try to start the application
+            fetch('/api/start-application', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -116,15 +129,17 @@
             .then(data => {
                 if (data.success) {
                     statusDiv.textContent = 'Application started successfully. Redirecting...';
-                    setTimeout(() => {
-                        window.location.href = 'http://mymoviesandtv.site:5050/main';
-                    }, 1000);
+                    // Redirect to the main application page
+                    window.location.href = '/main';
                 } else {
                     throw new Error(data.message || 'Failed to start application');
                 }
             })
             .catch(error => {
+                console.error('Error:', error);
                 statusDiv.textContent = 'Error: ' + error.message;
+                button.disabled = false;
+                button.textContent = 'Start Application';
             });
         });
     </script>

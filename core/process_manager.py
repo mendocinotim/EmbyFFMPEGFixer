@@ -47,13 +47,18 @@ class ProcessManager:
         with self._lock:
             try:
                 if self._current_process:
+                    logging.info("Attempting to stop process...")
                     self._current_process.terminate()
                     try:
                         self._current_process.wait(timeout=5)  # Wait up to 5 seconds
+                        logging.info("Process terminated successfully")
                     except subprocess.TimeoutExpired:
+                        logging.warning("Process did not terminate, forcing kill")
                         self._current_process.kill()  # Force kill if it doesn't terminate
-                    self._current_process = None
-                self._is_running = False
+                    finally:
+                        self._current_process = None
+                        self._is_running = False
+                        logging.info("Process state cleared")
                 return True
             except Exception as e:
                 logging.error(f"Error stopping process: {e}")
@@ -64,14 +69,21 @@ class ProcessManager:
         """Get the current process state."""
         with self._lock:
             # Update running state
-            if self._current_process and self._current_process.poll() is not None:
-                self._is_running = False
-                self._current_process = None
+            if self._current_process:
+                if self._current_process.poll() is not None:
+                    logging.info("Process has completed, clearing state")
+                    self._is_running = False
+                    self._current_process = None
+                else:
+                    # Process is still running
+                    self._is_running = True
             
-            return {
+            state = {
                 "is_running": self._is_running,
                 "process": self._current_process
             }
+            logging.debug(f"Current process state: {state}")
+            return state
 
 # Create a global instance
 process_manager = ProcessManager() 

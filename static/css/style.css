@@ -537,3 +537,34 @@ footer {
 .server-list option:hover {
     background-color: #f0f0f0;
 }
+
+@keyframes pulsate {
+    0% {
+        box-shadow: 0 0 0 0 rgba(0, 123, 255, 0.4);
+    }
+    70% {
+        box-shadow: 0 0 0 10px rgba(0, 123, 255, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(0, 123, 255, 0);
+    }
+}
+
+.btn.pulsating {
+    animation: pulsate 2s infinite;
+}
+
+.btn-danger.pulsating {
+    animation: pulsate 2s infinite;
+    box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.4);
+}
+
+.btn-danger.pulsating:hover {
+    animation: none;
+    box-shadow: none;
+}
+
+.btn.pulsating:hover {
+    animation: none;
+    box-shadow: none;
+}

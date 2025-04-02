@@ -18,10 +18,16 @@ class StateManager:
     def set_main_app_running(self, running):
         """Set whether the main app is running."""
         with self._lock:
-            self._main_app_running = running
-            if not running:
+            if running:
+                self._main_app_running = True
+                logging.info("Main app state set to running")
+            else:
+                logging.info("Stopping main app and cleaning up processes")
                 # When stopping the main app, ensure process is stopped
-                process_manager.stop_process()
+                if process_manager.is_running:
+                    process_manager.stop_process()
+                self._main_app_running = False
+                logging.info("Main app state set to stopped")
 
     def is_main_app_running(self):
         """Check if the main app is running."""
@@ -41,11 +47,14 @@ class StateManager:
     def get_state(self):
         """Get the complete application state."""
         with self._lock:
-            return {
+            process_state = process_manager.get_state()
+            state = {
                 "main_app_running": self._main_app_running,
                 "initial_state_backup_dir": self._initial_state_backup_dir,
-                "process_state": process_manager.get_state()
+                "process_state": process_state
             }
+            logging.debug(f"Current application state: {state}")
+            return state
 
     def create_initial_state_backup(self, emby_path):
         """Create a backup of the initial Emby Server state."""
